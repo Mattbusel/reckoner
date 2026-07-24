@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reckoner"
+version = "0.1.0"
+description = "Deterministic, explainable entity resolution for organization names. No fuzzy matching. Every merge comes with a receipt."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Matthew Busel", email = "mattbusel@gmail.com" }]
+keywords = [
+    "entity-resolution",
+    "record-linkage",
+    "deduplication",
+    "company-names",
+    "data-cleaning",
+    "data-engineering",
+    "master-data-management",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Mattbusel/reckoner"
+Issues = "https://github.com/Mattbusel/reckoner/issues"
+
+[tool.setuptools]
+packages = ["reckoner"]
