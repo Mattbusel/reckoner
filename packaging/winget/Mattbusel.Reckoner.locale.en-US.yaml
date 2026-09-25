@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: Mattbusel.Reckoner
+PackageVersion: 0.2.2
+PackageLocale: en-US
+Publisher: Mattbusel
+PublisherUrl: https://github.com/Mattbusel
+PublisherSupportUrl: https://github.com/Mattbusel/reckoner/issues
+PackageName: reckoner
+PackageUrl: https://github.com/Mattbusel/reckoner
+License: MIT
+LicenseUrl: https://github.com/Mattbusel/reckoner/blob/main/LICENSE
+ShortDescription: "Group rows that name the same company, merging only on proof, never guesses"
+Description: "reckoner reads a CSV, JSON or JSON Lines file of organization names and groups the rows that are the same company. It merges only on a shared identifier (CIK, UEI, EIN, CAGE, ticker, domain) or an exact normalized name, never a fuzzy guess, refuses merges when registry IDs conflict, and keeps a receipt for every decision."
+Tags:
+- entity-resolution
+- deduplication
+- record-linkage
+- csv
+- data-cleaning
+- cli
+ReleaseNotesUrl: https://github.com/Mattbusel/reckoner/releases/tag/v0.2.2
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
