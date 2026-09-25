@@ -31,6 +31,11 @@ class TestParse(unittest.TestCase):
         self.assertEqual(parse_records('{"name": "A"}\n{"name": "B"}\n'),
                          [{"name": "A"}, {"name": "B"}])
 
+    def test_csv_with_unquoted_comma_is_rejected(self):
+        with self.assertRaises(InputError) as ctx:
+            parse_records("Name,CIK\nBecton, Dickinson and Company,1\n", ".csv")
+        self.assertIn("line 2", str(ctx.exception))
+
     def test_bad_json(self):
         with self.assertRaises(InputError):
             parse_records("[1, 2]")
