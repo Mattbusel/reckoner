@@ -26,7 +26,7 @@ Join two public datasets on the raw name and you silently drop a large share of 
 - **Identifiers merge first.** A shared CIK, UEI, EIN, CAGE, ticker, or domain is the only thing that merges two records outright. Registry-grade IDs (CIK/UEI/EIN/CAGE) link at `0.97`+, reassignable ones (ticker/domain) lower.
 - **Names link only after conservative normalization, and only on an exact match.** Case, punctuation, `&`, a leading `The`, and trailing legal suffixes (`Inc`, `Corp`, `Company`, `LLC`, `GmbH`, `plc`, ...) are stripped. `GENERAL ELECTRIC CO` and `General Electric Company` both become `general electric` and link at `0.60`. Distinguishing words are never dropped.
 - **There is no fuzzy scoring anywhere.** A typo does not match. `Micrsoft` never links to `Microsoft`. This is a feature: no similarity knob to tune, no silent false merge.
-- **Conflicting strong identifiers block a merge.** Two records with the same normalized name but different CIKs are refused, and the refusal is recorded. `Meta Platforms` and `Meta Financial Group` stay separate.
+- **Conflicting strong identifiers block a merge.** Two records with the same normalized name but different CIKs are refused, and the refusal is recorded with its reason.
 - **Everything is a receipt.** Every link and every refusal is a `MatchRecord`: the original values, the normalized value, the method, the confidence, the evidence. You can audit any decision the resolver made.
 
 ## What it does not do
@@ -40,10 +40,10 @@ If you need probabilistic record linkage across millions of noisy consumer recor
 ## Install
 
 ```bash
-pip install reckoner
+pip install git+https://github.com/Mattbusel/reckoner
 ```
 
-Or just copy `reckoner/resolver.py` into your project. It is standard library only.
+It is not on PyPI: the `reckoner` name there belongs to an unrelated Helm tool, so do not `pip install reckoner`. Or just copy `reckoner/resolver.py` into your project. It is standard library only.
 
 ## Quickstart
 
@@ -72,7 +72,19 @@ Meta Platforms, Inc. <- ['Meta Platforms, Inc.'] (conf 1.0)
 Meta Financial Group, Inc. <- ['Meta Financial Group, Inc.'] (conf 1.0)
 ```
 
-GE merged on its CIK. Sherwin-Williams merged on the normalized name at lower confidence. The two Metas share a look but carry different CIKs, so the merge was refused. Run `examples/quickstart.py` to see the refusal receipt.
+GE merged on its CIK. Sherwin-Williams merged on the normalized name at lower confidence. The two Metas normalize to different names and carry different CIKs, so they never link.
+
+When two records do normalize to the same name but carry conflicting identifiers, the merge is refused and the refusal is kept:
+
+```python
+result = EntityResolver().resolve([
+    {"name": "Meta Platforms, Inc.", "cik": "1326801"},
+    {"name": "META PLATFORMS INC", "cik": "907471"},
+])
+result["entities_out"]  # 2, with a refusal receipt in result["matches"]
+```
+
+Run the full example with `PYTHONPATH=. python examples/quickstart.py` from the repo root (or after installing the package).
 
 ## The output shape
 
@@ -107,11 +119,11 @@ Each match / refusal receipt:
 
 ```python
 {
-  "left_index": 4, "right_index": 5,
+  "left_index": 0, "right_index": 1,
   "method": "name_exact_normalized",
   "confidence": 0.0, "merged": False,
   "left_original": "Meta Platforms, Inc.",
-  "right_original": "Meta Financial Group, Inc.",
+  "right_original": "META PLATFORMS INC",
   "normalized": "meta platforms",
   "evidence": [],
   "refusal_reason": "identical normalized names but conflicting CIK - refusing to merge",
@@ -141,7 +153,7 @@ python -m unittest discover -s tests
 
 ## License
 
-MIT.
+MIT, see [LICENSE](LICENSE).
 
 ---
 
