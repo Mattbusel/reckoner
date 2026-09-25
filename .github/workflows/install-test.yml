@@ -49,7 +49,7 @@ jobs:
       matrix:
         os: [macos-14, macos-15-intel, ubuntu-latest]
     steps:
-      - uses: Homebrew/actions/setup-homebrew@master
+      - uses: Homebrew/actions/setup-homebrew@main
       - run: brew install mattbusel/tap/reckoner
       - run: brew test mattbusel/tap/reckoner
       - run: reckoner --demo
