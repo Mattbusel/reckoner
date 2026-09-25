@@ -178,7 +178,12 @@ def main(argv: list[str] | None = None) -> int:
         rendered = format_summary(result)
 
     if args.output:
-        Path(args.output).write_text(rendered, encoding="utf-8", newline="")
+        try:
+            with open(args.output, "w", encoding="utf-8", newline="") as fh:
+                fh.write(rendered)
+        except OSError as exc:
+            print(f"reckoner: cannot write {args.output}: {exc.strerror or exc}", file=sys.stderr)
+            return 2
         print(f"wrote {args.output} ({result['records_in']} records -> "
               f"{result['entities_out']} entities)", file=sys.stderr)
     else:
