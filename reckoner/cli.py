@@ -65,7 +65,14 @@ def parse_records(text: str, hint: str = "") -> list[dict]:
             raise InputError("JSON input must be an array of objects (or one object per line)")
         return [dict(r) for r in data]
     reader = csv.DictReader(io.StringIO(stripped))
-    rows = [dict(r) for r in reader]
+    rows = []
+    for row in reader:
+        if None in row:
+            # More cells than headers: almost always an unquoted comma in a name.
+            raise InputError(
+                f"CSV line {reader.line_num} has more fields than the header. "
+                'Put values that contain commas in double quotes, e.g. "Becton, Dickinson and Co"')
+        rows.append(dict(row))
     if not reader.fieldnames:
         raise InputError("the CSV has no header row")
     return rows
