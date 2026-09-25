@@ -89,6 +89,39 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("cannot read", err)
 
+    def test_no_input_prints_next_steps(self):
+        code, out, err = run([])
+        self.assertEqual(code, 2)
+        self.assertIn("reckoner --demo", err)
+
+    def test_unrecognised_columns_explain_the_fix(self):
+        path = self.write("in.csv", "company,id\nAcme,1\n")
+        code, _, err = run([path])
+        self.assertEqual(code, 2)
+        self.assertIn("found: company, id", err)
+        self.assertIn("'name'", err)
+
+    def test_summary_explains_each_join(self):
+        code, out, _ = run(["--demo"])
+        self.assertEqual(code, 0)
+        self.assertIn("= name 'general electric'", out)
+        self.assertIn("= CIK 907471", out)
+        self.assertNotIn("\x1b[", out)  # not a terminal: no color
+
+    def test_color_modes(self):
+        _, out, _ = run(["--demo", "--color", "always"])
+        self.assertIn("\x1b[", out)
+        old = os.environ.get("NO_COLOR")
+        os.environ["NO_COLOR"] = "1"
+        try:
+            _, out, _ = run(["--demo"])
+        finally:
+            if old is None:
+                del os.environ["NO_COLOR"]
+            else:
+                os.environ["NO_COLOR"] = old
+        self.assertNotIn("\x1b[", out)
+
 
 if __name__ == "__main__":
     unittest.main()

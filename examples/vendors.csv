@@ -1,0 +1,10 @@
+name,ticker,source
+GENERAL ELECTRIC CO,GE,sec
+General Electric Company,,usaspending
+The Boeing Company,BA,sec
+BOEING CO,,usaspending
+Lockheed Martin Corporation,LMT,sec
+LOCKHEED MARTIN CORP,,usaspending
+Lockheed Martin Corp.,LMT,sam
+Microsoft Corporation,MSFT,sec
+Micrsoft Corp,,typo-feed

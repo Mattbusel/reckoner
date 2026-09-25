@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reckoner"
-version = "0.2.1"
+version = "0.2.2"
 description = "Deterministic, explainable entity resolution for organization names. No fuzzy matching. Every merge comes with a receipt."
 readme = "README.md"
 requires-python = ">=3.9"
