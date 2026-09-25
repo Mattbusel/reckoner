@@ -39,13 +39,67 @@ If you need probabilistic record linkage across millions of noisy consumer recor
 
 ## Install
 
+### Download (no Python needed)
+
+Grab the command line tool from the [latest release](https://github.com/Mattbusel/reckoner/releases/latest):
+
+| OS | File |
+| --- | --- |
+| Windows | `reckoner-vX.Y.Z-windows-x86_64.zip` |
+| macOS, Apple Silicon | `reckoner-vX.Y.Z-macos-arm64.tar.gz` |
+| macOS, Intel | `reckoner-vX.Y.Z-macos-x86_64.tar.gz` |
+| Linux | `reckoner-vX.Y.Z-linux-x86_64.tar.gz` |
+
+Unzip it and run `reckoner` from a terminal (`reckoner.exe` on Windows). It is a command line tool, so double-clicking it only flashes a window.
+
+The binaries are unsigned. Windows SmartScreen may say "unknown publisher": click **More info**, then **Run anyway**. On macOS, right-click the binary and choose **Open** the first time, or run `xattr -d com.apple.quarantine reckoner`.
+
+### pipx or pip
+
 ```bash
-pip install git+https://github.com/Mattbusel/reckoner
+pipx install git+https://github.com/Mattbusel/reckoner    # the reckoner command
+pip install git+https://github.com/Mattbusel/reckoner     # the library, plus the command
 ```
 
-It is not on PyPI: the `reckoner` name there belongs to an unrelated Helm tool, so do not `pip install reckoner`. Or just copy `reckoner/resolver.py` into your project. It is standard library only.
+It is not on PyPI: the `reckoner` name there belongs to an unrelated Helm tool, so do not `pip install reckoner`.
 
-## Quickstart
+### From source
+
+```bash
+git clone https://github.com/Mattbusel/reckoner
+cd reckoner
+python -m reckoner --demo
+```
+
+Or just copy `reckoner/resolver.py` into your project. It is standard library only.
+
+## Command line
+
+Point it at a CSV, JSON array or JSON Lines file of records. Column names are matched case-insensitively: `name`, `agency`, `cik`, `uei`, `ein`, `cage`, `ticker`, `domain`, `source`, `state`. Other columns are kept.
+
+```bash
+reckoner --demo                                  # built-in example
+reckoner companies.csv                           # readable summary, refusals listed
+reckoner companies.csv --format csv -o out.csv   # your rows + entity_id, canonical_name, link_confidence
+reckoner records.jsonl --format json             # full result with every match receipt
+reckoner agencies.csv --agency                   # agency names: DoD, EPA, U.S. prefixes
+cat companies.csv | reckoner -                   # read stdin
+```
+
+```
+$ reckoner --demo
+7 records -> 4 entities
+
+ent-0  General Electric Company  [confidence 0.99]  CIK 40545
+    alias: GENERAL ELECTRIC CO
+    alias: General Electric Company
+    records: 0, 1
+...
+Refused merges (1):
+    records 4 and 6: 'Meta Platforms, Inc.' vs 'META PLATFORMS INC': identical normalized names but conflicting CIK - refusing to merge
+```
+
+## Quickstart (Python)
 
 ```python
 from reckoner import EntityResolver
