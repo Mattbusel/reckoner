@@ -15,6 +15,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -86,26 +87,135 @@ def _read_input(path: str) -> tuple[str, str]:
     try:
         return p.read_text(encoding="utf-8-sig", errors="replace"), p.suffix
     except OSError as exc:
-        raise InputError(f"cannot read {path}: {exc.strerror or exc}") from exc
+        hint = (" (check the path; run reckoner --demo to see the expected input)"
+                if isinstance(exc, FileNotFoundError) else "")
+        raise InputError(f"cannot read {path}: {exc.strerror or exc}{hint}") from exc
 
 
-def format_summary(result: dict) -> str:
-    out = [f"{result['records_in']} records -> {result['entities_out']} entities", ""]
-    for e in result["entities"]:
-        ids = ", ".join(f"{k.upper()} {v}" for k, v in e["identifiers"].items())
-        out.append(f"{e['entity_id']}  {e['canonical_name'] or '(no name)'}"
-                   f"  [confidence {e['link_confidence']}]" + (f"  {ids}" if ids else ""))
-        if len(e["aliases"]) > 1:
-            for alias in e["aliases"]:
-                out.append(f"    alias: {alias}")
-        out.append(f"    records: {', '.join(str(i) for i in e['member_indices'])}")
+RECOGNISED_COLUMNS = ("name", "agency", "cik", "uei", "ein", "cage", "ticker", "domain")
+
+
+class _Style:
+    """ANSI styling that collapses to plain text when color is off."""
+
+    CODES = {"bold": "1", "dim": "2", "red": "31", "green": "32", "yellow": "33",
+             "blue": "34", "cyan": "36", "grey": "90"}
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+
+    def __call__(self, text: str, *styles: str) -> str:
+        if not self.enabled or not styles or not text:
+            return text
+        codes = ";".join(self.CODES[s] for s in styles)
+        return f"\x1b[{codes}m{text}\x1b[0m"
+
+
+def use_color(stream, mode: str = "auto") -> bool:
+    """auto: color on a terminal unless NO_COLOR is set; FORCE_COLOR forces it on."""
+    if mode == "never":
+        return False
+    if mode == "always":
+        return True
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return hasattr(stream, "isatty") and stream.isatty()
+
+
+def _enable_windows_ansi() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_uint32()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+    except Exception:  # pragma: no cover - best effort only
+        pass
+
+
+def _record_name(rec: dict) -> str:
+    return str(rec.get("name") or rec.get("agency") or "")
+
+
+def _conf_color(c: float) -> str:
+    return "green" if c >= 0.95 else ("yellow" if c >= 0.6 else "red")
+
+
+def format_summary(result: dict, records: list[dict] | None = None, color: bool = False) -> str:
+    """Readable report: every entity, the records it holds, and why each one joined.
+
+    `records` are the (key-normalized) input records; without them the member lines
+    fall back to the entity's aliases.
+    """
+    st = _Style(color)
+    merged = [m for m in result["matches"] if m["merged"]]
     refusals = [m for m in result["matches"] if not m["merged"]]
+    # why each record joined its cluster: the merge that brought it in
+    joined_by = {m["right_index"]: m for m in merged}
+
+    head = f"{result['records_in']} records -> {result['entities_out']} entities"
+    tail = (f"   {len(merged)} merge{'s' if len(merged) != 1 else ''}, "
+            f"{len(refusals)} refused")
+    out = [st(head, "bold") + st(tail, "grey"), ""]
+
+    id_w = max((len(e["entity_id"]) for e in result["entities"]), default=5)
+    idx_w = len(str(max(result["records_in"] - 1, 0))) + 1
+    names = [_record_name(r) for r in records] if records is not None else None
+    name_w = min(40, max((len(n) for n in names), default=10)) if names else 0
+    src_w = min(16, max((len(str(r.get("source") or "")) for r in records), default=0)) if records else 0
+
+    canon_w = min(44, max((len(e["canonical_name"] or "(no name)") for e in result["entities"]),
+                          default=10))
+    for e in result["entities"]:
+        ids = "  ".join(f"{k.upper()} {v}" for k, v in e["identifiers"].items())
+        conf = f"{e['link_confidence']:.2f}"
+        canon = e["canonical_name"] or "(no name)"
+        out.append(st(e["entity_id"].ljust(id_w), "grey") + "  "
+                   + st(canon, "bold") + " " * max(0, canon_w - len(canon))
+                   + "  " + st(conf, _conf_color(e["link_confidence"]))
+                   + (("  " + st(ids, "cyan")) if ids else ""))
+        pad = " " * (id_w + 2)
+        if names is None:
+            if len(e["aliases"]) > 1:
+                for alias in e["aliases"]:
+                    out.append(f"{pad}alias: {alias}")
+            out.append(f"{pad}records: {', '.join(str(i) for i in e['member_indices'])}")
+            continue
+        if len(e["member_indices"]) == 1:
+            continue
+        for i in e["member_indices"]:
+            nm = names[i] or "(no name)"
+            if len(nm) > name_w:
+                nm = nm[:name_w - 3] + "..."
+            src = str(records[i].get("source") or "")[:src_w]
+            m = joined_by.get(i)
+            if m is None:
+                why = ""
+            elif m["method"].startswith("id:"):
+                why = st("= " + m["method"][3:].upper() + " " + m["normalized"], "green")
+            else:
+                why = st(f"= name '{m['normalized']}'", "yellow")
+            row = (pad + st(f"#{i}".ljust(idx_w), "grey") + "  " + nm.ljust(name_w)
+                   + ("  " + st(src.ljust(src_w), "dim") if src_w else "")
+                   + ("  " + why if why else ""))
+            out.append(row.rstrip())
+
     if refusals:
         out.append("")
-        out.append(f"Refused merges ({len(refusals)}):")
+        out.append(st(f"Refused merges ({len(refusals)}):", "red", "bold"))
         for m in refusals:
-            out.append(f"    records {m['left_index']} and {m['right_index']}: "
-                       f"{m['left_original']!r} vs {m['right_original']!r}: {m['refusal_reason']}")
+            lead = f"  #{m['left_index']} + #{m['right_index']}  "
+            out.append(lead + f"{m['left_original']!r} vs {m['right_original']!r}")
+            out.append(" " * len(lead) + st(m["refusal_reason"], "red"))
+    if names is not None and result["entities_out"] < result["records_in"]:
+        out.append("")
+        out.append(st("#n is the input record.  '= CIK 123', '= TICKER X': joined on a shared ID.", "grey"))
+        out.append(st("'= name ...' joined on the exact normalized name (0.60, never fuzzy).", "grey"))
     return "\n".join(out) + "\n"
 
 
@@ -131,15 +241,30 @@ def format_csv(records: list[dict], result: dict) -> str:
     return buf.getvalue()
 
 
+EXAMPLES = """\
+examples:
+  reckoner --demo                                see it work on a built-in example
+  reckoner companies.csv                         readable report, refusals listed
+  reckoner companies.csv -f csv -o resolved.csv  your rows + entity_id, canonical_name,
+                                                 link_confidence
+  reckoner records.jsonl -f json                 full result with every match receipt
+  reckoner agencies.csv --agency                 agency names: DoD, EPA, U.S. prefixes
+  cat companies.csv | reckoner -                 read stdin
+
+Recognised columns (case-insensitive): name, agency, cik, uei, ein, cage, ticker,
+domain, source, state. Other columns are kept in CSV output.
+Color is on in a terminal; NO_COLOR=1 or --color never turns it off.
+"""
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reckoner",
-        description="Deterministic, explainable entity resolution for organization names. "
-                    "Reads records from a CSV, JSON or JSON Lines file (or - for stdin) and "
-                    "groups the ones that are the same organization. No fuzzy matching.",
-        epilog="Recognised columns (case-insensitive): name, agency, cik, uei, ein, cage, "
-               "ticker, domain, source, state. Example: reckoner companies.csv --format csv "
-               "-o resolved.csv",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Group records that name the same organization. Merges on shared IDs\n"
+                    "(CIK, EIN, UEI, CAGE, ticker, domain) or exact normalized names, never\n"
+                    "fuzzy guesses, and keeps a receipt for every merge and refusal.",
+        epilog=EXAMPLES,
     )
     parser.add_argument("input", nargs="?",
                         help="CSV, JSON or JSON Lines file of records, or - to read stdin")
@@ -152,8 +277,20 @@ def build_parser() -> argparse.ArgumentParser:
                         help="agency mode: strip US prefixes and expand aliases like DoD, EPA")
     parser.add_argument("--demo", action="store_true",
                         help="resolve a small built-in example instead of reading a file")
+    parser.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                        help="color the summary (default auto: on in a terminal, off when "
+                             "piped or when NO_COLOR is set)")
     parser.add_argument("--version", action="version", version=f"reckoner {__version__}")
     return parser
+
+
+FIRST_RUN = """\
+reckoner: no input file given.
+
+  reckoner --demo              see it work on a built-in example
+  reckoner companies.csv       resolve your own CSV, JSON or JSON Lines file
+  reckoner --help              every option, with examples
+"""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,11 +307,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"reckoner: {exc}", file=sys.stderr)
             return 2
     else:
-        parser.print_help()
+        sys.stderr.write(FIRST_RUN)
         return 2
 
     # The resolver sees lower-cased keys; CSV output keeps the original headers.
     records = [_normalize_keys(r) for r in raw]
+    if records and not any(k in r for r in records for k in RECOGNISED_COLUMNS):
+        found = ", ".join(sorted({str(k) for r in raw for k in r})[:8]) or "none"
+        print(f"reckoner: none of the columns are ones reckoner reads (found: {found}).\n"
+              "  Rename the organization-name column to 'name' (or 'agency'), and/or add an "
+              "ID column: cik, ein, uei, cage, ticker, domain.", file=sys.stderr)
+        return 2
     result = EntityResolver(agency_mode=args.agency).resolve(records)
 
     if args.format == "json":
@@ -182,7 +325,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.format == "csv":
         rendered = format_csv(raw, result)
     else:
-        rendered = format_summary(result)
+        color = not args.output and use_color(sys.stdout, args.color)
+        if color:
+            _enable_windows_ansi()
+        rendered = format_summary(result, records, color=color)
 
     if args.output:
         try:

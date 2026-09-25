@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" width="880" height="300" font-family="Cascadia Mono, Consolas, Menlo, monospace">
+  <rect x="0.5" y="0.5" width="879" height="299" rx="10" fill="#f7f2e6" stroke="#cbbd9f"/>
+  <g stroke="#22577a" stroke-opacity=".08">
+    <path d="M0 64H880M0 96H880M0 128H880M0 160H880M0 192H880M0 224H880M0 256H880"/>
+  </g>
+  <text x="28" y="40" font-family="Georgia, serif" font-size="20" font-weight="700" fill="#1d1a16">How reckoner decides, for every pair of records</text>
+
+  <!-- step 1 -->
+  <rect x="28" y="66" width="250" height="150" rx="5" fill="#fffdf7" stroke="#1d1a16" stroke-width="1.5"/>
+  <text x="44" y="92" font-size="12" fill="#6d6353">PASS 1</text>
+  <text x="44" y="116" font-family="Georgia, serif" font-size="17" font-weight="700" fill="#1d1a16">Same ID?</text>
+  <text x="44" y="142" font-size="12" fill="#1d1a16">CIK, UEI, EIN, CAGE,</text>
+  <text x="44" y="160" font-size="12" fill="#1d1a16">ticker or domain match</text>
+  <rect x="44" y="176" width="196" height="26" rx="3" fill="#e5efe6" stroke="#2e6b3f"/>
+  <text x="54" y="194" font-size="12.5" font-weight="700" fill="#2e6b3f">MERGE  0.85 to 0.99</text>
+
+  <path d="M278 141 H318" stroke="#1d1a16" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="283" y="132" font-size="11" fill="#6d6353">no</text>
+
+  <!-- step 2 -->
+  <rect x="322" y="66" width="250" height="150" rx="5" fill="#fffdf7" stroke="#1d1a16" stroke-width="1.5"/>
+  <text x="338" y="92" font-size="12" fill="#6d6353">PASS 2</text>
+  <text x="338" y="116" font-family="Georgia, serif" font-size="17" font-weight="700" fill="#1d1a16">Same normalized name?</text>
+  <text x="338" y="142" font-size="12" fill="#1d1a16">"THE BOEING COMPANY"</text>
+  <text x="338" y="160" font-size="12" fill="#1d1a16">"Boeing Co"  -&gt;  boeing</text>
+  <text x="338" y="194" font-size="12" fill="#6d6353">exact match only, no fuzz</text>
+
+  <path d="M572 141 H612" stroke="#1d1a16" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="577" y="132" font-size="11" fill="#6d6353">yes</text>
+
+  <!-- step 3 -->
+  <rect x="616" y="66" width="236" height="150" rx="5" fill="#fffdf7" stroke="#1d1a16" stroke-width="1.5"/>
+  <text x="632" y="92" font-size="12" fill="#6d6353">CHECK</text>
+  <text x="632" y="116" font-family="Georgia, serif" font-size="17" font-weight="700" fill="#1d1a16">Conflicting IDs?</text>
+  <rect x="632" y="132" width="204" height="26" rx="3" fill="#f6e3dd" stroke="#b23a2e"/>
+  <text x="642" y="150" font-size="12.5" font-weight="700" fill="#b23a2e">yes: REFUSE + reason</text>
+  <rect x="632" y="170" width="204" height="26" rx="3" fill="#f5ead3" stroke="#9a6410"/>
+  <text x="642" y="188" font-size="12.5" font-weight="700" fill="#9a6410">no: LINK  0.60</text>
+
+  <text x="28" y="252" font-size="12.5" fill="#1d1a16">Anything else stays apart. "Micrsoft Corp" never joins "Microsoft Corporation".</text>
+  <text x="28" y="274" font-size="12.5" fill="#6d6353">Every MERGE, LINK and REFUSE is written down as a receipt you can audit.</text>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#1d1a16"/>
+    </marker>
+  </defs>
+</svg>

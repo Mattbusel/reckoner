@@ -280,11 +280,15 @@ class EntityResolver:
                     sources.append(str(src))
             # canonical name: longest alias (most specific), stable tiebreak
             canonical = max(aliases, key=lambda a: (len(a), a)) if aliases else ""
-            # link confidence = the strongest evidence that formed this cluster:
-            # a shared identifier's confidence if any merged the members, otherwise
-            # the exact-normalized-name confidence. A singleton is trivially 1.0.
+            # link confidence = the strongest evidence that actually merged this
+            # cluster: a shared identifier's confidence if an identifier merged
+            # members, otherwise the exact-normalized-name confidence. An
+            # identifier held by only one member proves nothing about the others,
+            # so it does not raise the score. A singleton is trivially 1.0.
             if len(members) > 1:
-                confidence = max((IDENTIFIERS[k][1] for k in ids),
+                member_set = set(members)
+                confidence = max((m.confidence for m in matches
+                                  if m.merged and m.left_index in member_set),
                                  default=NAME_EXACT_CONFIDENCE)
             else:
                 confidence = 1.0

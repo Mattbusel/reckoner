@@ -45,6 +45,17 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(r["entities_out"], 1)
         self.assertGreaterEqual(r["entities"][0]["link_confidence"], 0.99)
 
+    def test_id_on_one_side_only_does_not_raise_confidence(self):
+        # Only one record carries the CIK, so the merge is a name link: 0.60, not 0.99.
+        recs = [
+            {"name": "GENERAL ELECTRIC CO", "cik": "40545"},
+            {"name": "General Electric Company"},
+        ]
+        r = EntityResolver().resolve(recs)
+        self.assertEqual(r["entities_out"], 1)
+        self.assertEqual(r["entities"][0]["link_confidence"], 0.60)
+        self.assertEqual(r["entities"][0]["identifiers"], {"cik": "40545"})
+
     def test_conflicting_strong_id_blocks_merge(self):
         recs = [
             {"name": "Meta Inc", "cik": "1326801"},

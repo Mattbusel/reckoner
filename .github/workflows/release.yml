@@ -64,7 +64,7 @@ jobs:
           grep -q "7 records -> 4 entities" out.txt
           printf 'Name,CIK\nGENERAL ELECTRIC CO,40545\nGeneral Electric Company,\n' > in.csv
           "$exe" in.csv --format csv | tee out.csv
-          grep -q "ent-0,General Electric Company,0.99" out.csv
+          grep -q "ent-0,General Electric Company,0.6" out.csv
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
