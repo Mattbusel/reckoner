@@ -1,0 +1,82 @@
+name: Publish to PyPI
+
+# Push a tag like v0.3.0 to build the sdist and wheel, test them, and upload them
+# to PyPI as `reckoner-er` with trusted publishing (no API token stored here).
+#
+# One-time setup on pypi.org (Account settings -> Publishing -> Add a new pending
+# publisher): project name reckoner-er, owner Mattbusel, repository reckoner,
+# workflow publish.yml, environment pypi. Then create the `pypi` environment in
+# this repository's Settings -> Environments.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  # Build-and-test dry run when this workflow or the packaging changes. Nothing is
+  # uploaded on a pull request.
+  pull_request:
+    paths:
+      - ".github/workflows/publish.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag matches the package version
+        if: github.event_name == 'push'
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          module=$(python -c "import re; print(re.search(r'__version__ = \"([^\"]+)\"', open('reckoner/__init__.py').read()).group(1))")
+          echo "tag=${GITHUB_REF_NAME} pyproject=${version} module=${module}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          test "${module}" = "${version}"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+          python -m twine check --strict dist/*
+          ls -l dist
+
+      - name: Install the wheel and smoke test it
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheel-env/bin/reckoner --version
+          /tmp/wheel-env/bin/reckoner --demo | grep -q "7 records -> 4 entities"
+          /tmp/wheel-env/bin/reckoner match "GENERAL ELECTRIC CO" "General Electric Company"
+          /tmp/wheel-env/bin/python -c "import reckoner, pathlib; assert (pathlib.Path(reckoner.__file__).parent / 'py.typed').exists(); print(reckoner.match('Oracle Partners, L.P.', 'ORACLE PARTNERS LP'))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+  publish:
+    name: Upload to PyPI
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/reckoner-er/
+    permissions:
+      id-token: write   # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,14 +1,18 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reckoner"
-version = "0.2.2"
+# "reckoner" on PyPI is an unrelated Helm tool, so the distribution is reckoner-er.
+# The import name and the command are still `reckoner`.
+name = "reckoner-er"
+version = "0.3.0"
 description = "Deterministic, explainable entity resolution for organization names. No fuzzy matching. Every merge comes with a receipt."
-readme = "README.md"
+# The PyPI page. Its images use absolute URLs, so they render on PyPI.
+readme = { file = "docs/pypi.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Matthew Busel", email = "mattbusel@gmail.com" }]
 keywords = [
     "entity-resolution",
@@ -18,12 +22,22 @@ keywords = [
     "data-cleaning",
     "data-engineering",
     "master-data-management",
+    "name-matching",
+    "lei",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -35,6 +49,15 @@ reckoner = "reckoner.cli:main"
 [project.urls]
 Homepage = "https://github.com/Mattbusel/reckoner"
 Issues = "https://github.com/Mattbusel/reckoner/issues"
+Changelog = "https://github.com/Mattbusel/reckoner/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Mattbusel/reckoner/blob/main/docs/python-api.md"
 
 [tool.setuptools]
 packages = ["reckoner"]
+
+[tool.setuptools.package-data]
+reckoner = ["py.typed"]
+
+[tool.mypy]
+strict = true
+files = ["reckoner"]

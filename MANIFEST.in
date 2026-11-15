@@ -1,0 +1,8 @@
+# The sdist carries what the test suite needs: tests/test_api.py runs the
+# benchmark on the committed GLEIF snapshot.
+recursive-include tests *.py
+recursive-include benchmarks *.py *.csv *.json
+recursive-include docs *.md
+recursive-include examples *.py *.csv
+include CHANGELOG.md
+global-exclude __pycache__ *.py[cod]

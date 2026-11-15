@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Tuple
 
 # ---------------------------------------------------------------------------
 # normalization
@@ -39,18 +40,47 @@ _LEAD_NOISE = ("the ",)
 
 _WS = re.compile(r"\s+")
 _PUNCT = re.compile(r"[^\w\s&]")   # keep & for the AND expansion below
+# One dotted abbreviation that ends exactly where the search stops: either letters
+# joined by dots with no spaces ("l.l.c.", "l.p", "u.s.") or single dotted letters
+# separated by spaces ("s. a."). It may not start right after a letter, digit or
+# '.', so a match never begins in the middle of "l.l.c." or "u.s.".
+_DOTTED_AT_END = re.compile(
+    r"(?<![a-z0-9.])(?:[a-z](?:\.[a-z]){1,3}\.?|[a-z]\.(?:\s+[a-z]\.){1,3})$")
+# What may follow a dotted suffix: spaces and punctuation other than '.'.
+_GAP_AT_END = re.compile(r"[^\w.]*$")
+
+
+def _join_dotted_suffixes(s: str) -> str:
+    """Join trailing dotted legal suffixes, one abbreviation at a time from the right:
+    'acme u.s. l.p.' -> 'acme u.s. lp', 'foo l.p. l.l.c.' -> 'foo lp llc'. It stops
+    at the first abbreviation whose letters do not spell a legal suffix, so that
+    initials such as 'A.G. Edwards' or 'U.S.' are left exactly as they were."""
+    end = len(s)
+    while True:
+        gap = _GAP_AT_END.search(s, 0, end)
+        end = gap.start() if gap else end
+        m = _DOTTED_AT_END.search(s, 0, end)
+        if not m:
+            return s
+        letters = re.sub(r"[^a-z]", "", m.group(0))
+        if letters not in LEGAL_SUFFIXES:
+            return s
+        s = f"{s[:m.start()]} {letters}{s[m.end():]}"
+        end = m.start()
 
 
 def normalize_org(name: str) -> str:
     """Conservative canonical form of an organization name. Deliberately does NOT
     stem, abbreviate, or drop distinguishing words - only case, punctuation, '&',
-    leading 'the', and trailing legal suffixes."""
+    leading 'the', and trailing legal suffixes (dotted forms such as 'L.L.C.' and
+    'L.P.' included)."""
     s = (name or "").strip().lower()
     if not s:
         return ""
     for lead in _LEAD_NOISE:
         if s.startswith(lead):
             s = s[len(lead):]
+    s = _join_dotted_suffixes(s)
     s = s.replace("&", " and ")
     s = _PUNCT.sub(" ", s)
     s = _WS.sub(" ", s).strip()
@@ -91,34 +121,34 @@ def normalize_agency(name: str) -> str:
 
 
 # ---- identifier normalizers (each returns "" when the value is unusable) ----
-def norm_cik(v) -> str:
+def norm_cik(v: Any) -> str:
     s = re.sub(r"\D", "", str(v or ""))
     return s.lstrip("0") or "" if s else ""
 
 
-def norm_uei(v) -> str:
+def norm_uei(v: Any) -> str:
     """UEI is exactly 12 alphanumerics; formatting separators (dashes/spaces) are
     stripped before validating, anything else is rejected as unusable."""
     s = re.sub(r"[^A-Za-z0-9]", "", str(v or "")).upper()
     return s if len(s) == 12 else ""
 
 
-def norm_ein(v) -> str:
+def norm_ein(v: Any) -> str:
     s = re.sub(r"\D", "", str(v or ""))
     return s if len(s) == 9 else ""
 
 
-def norm_cage(v) -> str:
+def norm_cage(v: Any) -> str:
     s = re.sub(r"[^A-Za-z0-9]", "", str(v or "")).upper()
     return s if len(s) == 5 else ""
 
 
-def norm_ticker(v) -> str:
+def norm_ticker(v: Any) -> str:
     s = str(v or "").strip().upper()
     return s if re.fullmatch(r"[A-Z]{1,6}(\.[A-Z])?", s) else ""
 
 
-def norm_domain(v) -> str:
+def norm_domain(v: Any) -> str:
     s = str(v or "").strip().lower()
     s = re.sub(r"^https?://", "", s).split("/")[0]
     s = s.removeprefix("www.")
@@ -127,7 +157,7 @@ def norm_domain(v) -> str:
 
 # identifier name -> (normalizer, confidence when it makes the match). CIK/UEI/EIN
 # are registry-grade; ticker/domain are strong but reassignable, hence lower.
-IDENTIFIERS: dict[str, tuple] = {
+IDENTIFIERS: Dict[str, Tuple[Callable[[Any], str], float]] = {
     "cik": (norm_cik, .99),
     "uei": (norm_uei, .99),
     "ein": (norm_ein, .98),
@@ -152,15 +182,15 @@ class MatchRecord:
     left_original: str
     right_original: str
     normalized: str                        # the shared normalized value
-    evidence: list = field(default_factory=list)
+    evidence: List[str] = field(default_factory=list)
     refusal_reason: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> Dict[str, Any]:
         return dict(self.__dict__)
 
 
 class _UnionFind:
-    def __init__(self, n: int):
+    def __init__(self, n: int) -> None:
         self.parent = list(range(n))
 
     def find(self, i: int) -> int:
@@ -184,22 +214,22 @@ class EntityResolver:
       as a merge key).
     """
 
-    def __init__(self, agency_mode: bool = False):
+    def __init__(self, agency_mode: bool = False) -> None:
         self.agency_mode = agency_mode
         self._norm_name = normalize_agency if agency_mode else normalize_org
 
     # -- per-record feature extraction --------------------------------------
-    def _features(self, rec: dict) -> dict:
+    def _features(self, rec: Dict[str, Any]) -> Dict[str, Any]:
         name = str(rec.get("name") or rec.get("agency") or "")
-        feats = {"original_name": name, "norm_name": self._norm_name(name), "ids": {}}
+        ids: Dict[str, str] = {}
         for key, (fn, _conf) in IDENTIFIERS.items():
             val = fn(rec.get(key))
             if val:
-                feats["ids"][key] = val
-        return feats
+                ids[key] = val
+        return {"original_name": name, "norm_name": self._norm_name(name), "ids": ids}
 
     @staticmethod
-    def _id_conflict(fa: dict, fb: dict) -> str:
+    def _id_conflict(fa: Dict[str, Any], fb: Dict[str, Any]) -> str:
         """Name-merge blocker: same strong identifier PRESENT ON BOTH with different
         values. Returns the conflicting id name, or ''."""
         for key in STRONG_IDS:
@@ -208,7 +238,7 @@ class EntityResolver:
                 return key
         return ""
 
-    def resolve(self, records: list[dict]) -> dict:
+    def resolve(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
         feats = [self._features(r) for r in records]
         uf = _UnionFind(len(records))
         matches: list[MatchRecord] = []

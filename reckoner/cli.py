@@ -4,6 +4,7 @@
     reckoner companies.csv --format csv -o out.csv   every input row + its entity
     reckoner records.json --format json        the full result, receipts included
     reckoner --demo                            run on a built-in example
+    reckoner match "GE Co" "General Electric"  are two names the same organization?
 
 Column names are matched case-insensitively against the keys the resolver
 understands: name, agency, cik, uei, ein, cage, ticker, domain, source, state.
@@ -18,8 +19,10 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
 from . import __version__
+from .api import MatchResult, match
 from .resolver import EntityResolver
 
 DEMO_RECORDS = [
@@ -37,12 +40,12 @@ class InputError(Exception):
     """The input file could not be read as records."""
 
 
-def _normalize_keys(record: dict) -> dict:
+def _normalize_keys(record: Dict[Any, Any]) -> Dict[str, Any]:
     """Lower-case and trim column names so `Name`, ` CIK ` etc. are recognised."""
     return {str(k).strip().lower(): v for k, v in record.items() if k is not None}
 
 
-def parse_records(text: str, hint: str = "") -> list[dict]:
+def parse_records(text: str, hint: str = "") -> List[Dict[str, Any]]:
     """Parse CSV, a JSON array of objects, or JSON Lines into a list of dicts."""
     stripped = text.lstrip("﻿").strip()
     if not stripped:
@@ -111,7 +114,7 @@ class _Style:
         return f"\x1b[{codes}m{text}\x1b[0m"
 
 
-def use_color(stream, mode: str = "auto") -> bool:
+def use_color(stream: Any, mode: str = "auto") -> bool:
     """auto: color on a terminal unless NO_COLOR is set; FORCE_COLOR forces it on."""
     if mode == "never":
         return False
@@ -129,7 +132,7 @@ def _enable_windows_ansi() -> None:
         return
     try:
         import ctypes
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
         handle = kernel32.GetStdHandle(-11)
         mode = ctypes.c_uint32()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
@@ -138,7 +141,16 @@ def _enable_windows_ansi() -> None:
         pass
 
 
-def _record_name(rec: dict) -> str:
+def _utf8_stdout() -> None:
+    """Windows consoles and pipes may not be UTF-8; never crash on a company name."""
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except ValueError:
+            pass
+
+
+def _record_name(rec: Dict[str, Any]) -> str:
     return str(rec.get("name") or rec.get("agency") or "")
 
 
@@ -146,7 +158,8 @@ def _conf_color(c: float) -> str:
     return "green" if c >= 0.95 else ("yellow" if c >= 0.6 else "red")
 
 
-def format_summary(result: dict, records: list[dict] | None = None, color: bool = False) -> str:
+def format_summary(result: Dict[str, Any], records: List[Dict[str, Any]] | None = None,
+                   color: bool = False) -> str:
     """Readable report: every entity, the records it holds, and why each one joined.
 
     `records` are the (key-normalized) input records; without them the member lines
@@ -192,7 +205,7 @@ def format_summary(result: dict, records: list[dict] | None = None, color: bool 
             nm = names[i] or "(no name)"
             if len(nm) > name_w:
                 nm = nm[:name_w - 3] + "..."
-            src = str(records[i].get("source") or "")[:src_w]
+            src = str((records[i] if records is not None else {}).get("source") or "")[:src_w]
             m = joined_by.get(i)
             if m is None:
                 why = ""
@@ -219,7 +232,7 @@ def format_summary(result: dict, records: list[dict] | None = None, color: bool 
     return "\n".join(out) + "\n"
 
 
-def format_csv(records: list[dict], result: dict) -> str:
+def format_csv(records: List[Dict[str, Any]], result: Dict[str, Any]) -> str:
     """One row per input record, in input order, with its entity appended."""
     by_index = {}
     for e in result["entities"]:
@@ -250,10 +263,13 @@ examples:
   reckoner records.jsonl -f json                 full result with every match receipt
   reckoner agencies.csv --agency                 agency names: DoD, EPA, U.S. prefixes
   cat companies.csv | reckoner -                 read stdin
+  reckoner match "SHERWIN-WILLIAMS CO" "The Sherwin Williams Company"
+                                                 compare two names; exit 0 if they match
 
 Recognised columns (case-insensitive): name, agency, cik, uei, ein, cage, ticker,
 domain, source, state. Other columns are kept in CSV output.
 Color is on in a terminal; NO_COLOR=1 or --color never turns it off.
+To resolve a file that is literally named "match", write ./match or -- match.
 """
 
 
@@ -289,11 +305,120 @@ reckoner: no input file given.
 
   reckoner --demo              see it work on a built-in example
   reckoner companies.csv       resolve your own CSV, JSON or JSON Lines file
+  reckoner match "A" "B"       check whether two names are the same organization
   reckoner --help              every option, with examples
 """
 
 
+MATCH_EXAMPLES = """\
+examples:
+  reckoner match "GENERAL ELECTRIC CO" "General Electric Company"
+  reckoner match "Meta Platforms" "Meta Financial Group"
+  reckoner match --a-cik 40545 --b-cik 0000040545 "GE" "General Electric"
+  reckoner match --agency "DoD" "U.S. Department of Defense" --json
+
+A match needs a shared identifier, or names that are identical after
+normalization (case, punctuation, '&', a leading 'the', legal suffixes such as
+Inc, Co, LLC). Similar-looking names never match.
+"""
+
+
+def build_match_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="reckoner match",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Say whether two names are the same organization, and why.\n"
+                    "Exit status: 0 when they match, 1 when they do not, 2 on a usage error.",
+        epilog=MATCH_EXAMPLES,
+    )
+    parser.add_argument("a", help="first organization name")
+    parser.add_argument("b", help="second organization name")
+    for side in ("a", "b"):
+        for key in ("cik", "uei", "ein", "cage", "ticker", "domain"):
+            parser.add_argument(f"--{side}-{key}", metavar=key.upper(),
+                                help=argparse.SUPPRESS if key != "cik" else
+                                f"{key.upper()} of name {side.upper()} (likewise --{side}-uei, "
+                                f"--{side}-ein, --{side}-cage, --{side}-ticker, --{side}-domain)")
+    parser.add_argument("--agency", action="store_true",
+                        help="agency mode: strip US prefixes and expand aliases like DoD, EPA")
+    parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument("--color", choices=("auto", "always", "never"), default="auto",
+                        help="color the verdict (default auto: on in a terminal, off when "
+                             "piped or when NO_COLOR is set)")
+    return parser
+
+
+def format_match(result: MatchResult, a: str, b: str, color: bool = False) -> str:
+    st = _Style(color)
+    verdict = (st("MATCH", "green", "bold") if result.matched
+               else st("NO MATCH", "red", "bold"))
+    lines = [f"{verdict}  {result.score:.2f}  {st(result.method, 'grey')}",
+             f"  a: {a}", f"  b: {b}"]
+    lines.extend(f"  - {r}" for r in result.reasons)
+    return "\n".join(lines) + "\n"
+
+
+def match_main(argv: list[str]) -> int:
+    args = build_match_parser().parse_args(argv)
+    recs = []
+    for side, name in (("a", args.a), ("b", args.b)):
+        rec = {"name": name}
+        for key in ("cik", "uei", "ein", "cage", "ticker", "domain"):
+            val = getattr(args, f"{side}_{key}")
+            if val:
+                rec[key] = val
+        recs.append(rec)
+    result = match(recs[0], recs[1], agency=args.agency)
+    if args.json:
+        rendered = json.dumps({
+            "matched": result.matched, "score": result.score, "method": result.method,
+            "reasons": list(result.reasons), "normalized": list(result.normalized),
+        }, indent=2, ensure_ascii=False) + "\n"
+    else:
+        color = use_color(sys.stdout, args.color)
+        if color:
+            _enable_windows_ansi()
+        rendered = format_match(result, args.a, args.b, color=color)
+    _utf8_stdout()
+    sys.stdout.write(rendered)
+    return 0 if result.matched else 1
+
+
+# Options of the main command that take a value, so `reckoner --color never match`
+# is not read as an input file named "never".
+_VALUE_OPTIONS = ("-f", "--format", "-o", "--output", "--color")
+
+
+def _subcommand_index(argv: list[str]) -> int | None:
+    """Index of the `match` subcommand in ``argv``, or None.
+
+    The first positional argument decides: if it is ``match``, this is the match
+    command, wherever options put it. To resolve a file that is literally named
+    ``match``, write ``./match`` or put ``--`` before it.
+    """
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--":
+            return None
+        if tok.startswith("-") and tok != "-":
+            # argparse also accepts an unambiguous prefix such as --col.
+            if tok in _VALUE_OPTIONS or (len(tok) > 3 and "=" not in tok and any(
+                    o.startswith(tok) for o in _VALUE_OPTIONS if o.startswith("--"))):
+                i += 1  # skip the option's value
+            i += 1
+            continue
+        return i if tok == "match" else None
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    sub = _subcommand_index(argv)
+    if sub is not None:
+        # `reckoner match A B`. Options given before `match` that the match
+        # command shares (--agency, --color) are passed on.
+        return match_main(argv[:sub] + argv[sub + 1:])
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -340,11 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"wrote {args.output} ({result['records_in']} records -> "
               f"{result['entities_out']} entities)", file=sys.stderr)
     else:
-        # Windows consoles and pipes may not be UTF-8; never crash on a company name.
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-        except (AttributeError, ValueError):
-            pass
+        _utf8_stdout()
         sys.stdout.write(rendered)
     return 0
 

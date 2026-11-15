@@ -25,4 +25,18 @@ jobs:
           python -m pip install .
           reckoner --version
           reckoner --demo
+          reckoner match "GENERAL ELECTRIC CO" "General Electric Company"
           PYTHONPATH=. python examples/quickstart.py
+          PYTHONPATH=. python examples/api.py
+      - name: Benchmark (GLEIF snapshot, fails below the floor)
+        run: python benchmarks/run_benchmark.py --min-precision 0.95 --min-recall 0.95
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install mypy
+      - name: mypy --strict
+        run: python -m mypy
